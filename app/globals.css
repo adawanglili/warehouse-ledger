@@ -1,0 +1,65 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  --background: #FAF7EF;
+  --foreground: #2B2820;
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body: 'Inter', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+
+  --color-rust: #A8453E;
+  --color-rust-soft: #F4E4D8;
+  --color-ink: #2B2820;
+  --color-cream: #FAF7EF;
+  --color-card: #FFFFFF;
+  --color-border: #E8E2D2;
+  --color-border-soft: #F0EBDE;
+  --color-muted: #8A8378;
+  --color-muted-soft: #A39C8C;
+  --color-gold: #C9A24B;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
+
+input::placeholder, textarea::placeholder {
+  color: #B5AFA3;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+.fade-in {
+  animation: fadeIn 0.25s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.row-hover:hover {
+  background: #F7F4EC !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in { animation: none; }
+}
