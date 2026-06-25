@@ -5,23 +5,20 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { TrendingDown, TrendingUp, Minus, ChevronRight, ChevronLeft, Search, X } from "lucide-react";
-import { CAT_COLOR, fmtMoney, fmtDate, SectionHeading, EmptyState, ghostBtn, inputStyle } from "./ui";
+import { TrendingDown, TrendingUp, Minus, ChevronRight, ChevronLeft } from "lucide-react";
+import { CAT_COLOR, fmtMoney, fmtDate, SectionHeading, EmptyState, ghostBtn } from "./ui";
 
 const SORT_OPTIONS = [
   { value: "alpha", label: "A → Z" },
   { value: "purchases", label: "Most purchased" },
 ];
 
-const DOT_COLORS = [
-  "#A8453E","#4B7C92","#5B7553","#C9A24B","#B86B3F",
-  "#6B6470","#8A6E4B","#7B5EA7","#2E7D82","#A0522D",
-];
+const CHART_COLOR = "#A8453E";
 
 export default function HistoryView({ items, priceHistory }) {
   const [selectedId, setSelectedId] = useState(null);
   const [sort, setSort] = useState("purchases");
-  const [overviewFilter, setOverviewFilter] = useState("");
+  const [overviewItemId, setOverviewItemId] = useState("");
 
   const countMap = useMemo(() => {
     const m = {};
@@ -43,11 +40,7 @@ export default function HistoryView({ items, priceHistory }) {
     [itemsWithHistory, countMap]
   );
 
-  const filteredOverviewItems = useMemo(() => {
-    const q = overviewFilter.trim().toLowerCase();
-    if (!q) return multiPurchaseItems;
-    return multiPurchaseItems.filter((it) => it.name.toLowerCase().includes(q));
-  }, [multiPurchaseItems, overviewFilter]);
+  const overviewItem = overviewItemId ? items.find((it) => it.id === overviewItemId) : null;
 
   if (itemsWithHistory.length === 0) {
     return (
@@ -94,14 +87,13 @@ export default function HistoryView({ items, priceHistory }) {
         </div>
       </div>
 
-      {/* Overview chart */}
-      {multiPurchaseItems.length >= 2 && (
-        <OverviewChart
-          items={filteredOverviewItems}
-          allItems={multiPurchaseItems}
+      {/* Overview panel */}
+      {multiPurchaseItems.length >= 1 && (
+        <OverviewPanel
+          items={multiPurchaseItems}
           priceHistory={priceHistory}
-          filter={overviewFilter}
-          setFilter={setOverviewFilter}
+          selectedItemId={overviewItemId}
+          setSelectedItemId={setOverviewItemId}
         />
       )}
 
@@ -148,52 +140,118 @@ export default function HistoryView({ items, priceHistory }) {
   );
 }
 
-// ---------- Overview dot-plot chart ----------
-// Custom SVG: X = item names, Y = price
-// Each purchase = a dot; dots for same item connected by a vertical range line
-// Tooltip on hover shows price + date
-function OverviewChart({ items, allItems, priceHistory, filter, setFilter }) {
-  const [tooltip, setTooltip] = useState(null); // { x, y, item, price, date }
+// ---------- Overview panel ----------
+function OverviewPanel({ items, priceHistory, selectedItemId, setSelectedItemId }) {
+  const selectedItem = selectedItemId ? items.find((it) => it.id === selectedItemId) : null;
+
+  const chartData = useMemo(() => {
+    if (!selectedItem) return [];
+    return priceHistory
+      .filter((h) => h.item_id === selectedItem.id)
+      .sort((a, b) => (a.date < b.date ? -1 : 1))
+      .map((h) => ({ date: h.date, price: Number(h.price), label: fmtDate(h.date) }));
+  }, [selectedItem, priceHistory]);
+
+  const prices = chartData.map((d) => d.price);
+  const min = prices.length ? Math.min(...prices) : null;
+  const max = prices.length ? Math.max(...prices) : null;
+  const firstPrice = prices[0];
+  const lastPrice = prices[prices.length - 1];
+  const netChange = prices.length >= 2 ? lastPrice - firstPrice : null;
+
+  return (
+    <div style={{
+      background: "#fff", border: "1px solid var(--color-border)",
+      borderRadius: 10, padding: "16px", marginBottom: 20,
+    }}>
+      {/* Dropdown */}
+      <div style={{ marginBottom: selectedItem ? 16 : 0 }}>
+        <select
+          value={selectedItemId}
+          onChange={(e) => setSelectedItemId(e.target.value)}
+          style={{
+            width: "100%",
+            padding: "10px 12px",
+            border: "1.5px solid var(--color-border)",
+            borderRadius: 8,
+            fontSize: 13.5,
+            fontFamily: "var(--font-body)",
+            background: "#FFFEFC",
+            color: selectedItemId ? "var(--color-ink)" : "#B5AFA3",
+            outline: "none",
+            appearance: "none",
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A39C8C' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "right 12px center",
+            paddingRight: 32,
+            cursor: "pointer",
+          }}
+        >
+          <option value="" disabled>Pick one item to review $ changes…</option>
+          {items.map((item) => (
+            <option key={item.id} value={item.id}>{item.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Chart — only shown once an item is selected */}
+      {selectedItem && chartData.length >= 2 && (
+        <>
+          {/* Item name as chart header */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 4, background: CAT_COLOR[selectedItem.category] || "#8A8378", flexShrink: 0 }} />
+              <span style={{ fontFamily: "var(--font-display)", fontSize: 19, fontWeight: 600, letterSpacing: "-0.01em" }}>
+                {selectedItem.name}
+              </span>
+            </div>
+            {netChange !== null && (
+              <div style={{ fontSize: 12.5, color: netChange > 0 ? "var(--color-rust)" : netChange < 0 ? "#5B7553" : "var(--color-muted)", marginTop: 3, marginLeft: 15, fontWeight: 600 }}>
+                {netChange > 0 ? "▲" : netChange < 0 ? "▼" : "–"} {netChange > 0 ? "+" : ""}{fmtMoney(netChange)} since first purchase
+              </div>
+            )}
+          </div>
+
+          {/* Stat chips */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <Chip label="Low" value={fmtMoney(min)} color="#5B7553" />
+            <Chip label="High" value={fmtMoney(max)} color="var(--color-rust)" />
+            <Chip label="Purchases" value={chartData.length} color="var(--color-ink)" />
+          </div>
+
+          {/* SVG dot + line chart */}
+          <PriceDotChart data={chartData} />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------- Custom SVG dot+line chart ----------
+function PriceDotChart({ data }) {
+  const [tooltip, setTooltip] = useState(null);
   const svgRef = useRef(null);
 
-  const PADDING = { top: 24, right: 16, bottom: 60, left: 48 };
-  const HEIGHT = 260;
+  const PADDING = { top: 32, right: 20, bottom: 44, left: 52 };
+  const VW = 680;
+  const VH = 240;
+  const innerW = VW - PADDING.left - PADDING.right;
+  const innerH = VH - PADDING.top - PADDING.bottom;
 
-  // Build per-item data
-  const itemData = useMemo(() => {
-    return items.map((item, i) => {
-      const purchases = priceHistory
-        .filter((h) => h.item_id === item.id)
-        .sort((a, b) => (a.date < b.date ? -1 : 1))
-        .map((h) => ({ price: Number(h.price), date: h.date }));
-      return {
-        item,
-        purchases,
-        color: DOT_COLORS[allItems.findIndex((it) => it.id === item.id) % DOT_COLORS.length],
-        min: Math.min(...purchases.map((p) => p.price)),
-        max: Math.max(...purchases.map((p) => p.price)),
-      };
-    });
-  }, [items, priceHistory, allItems]);
+  const prices = data.map((d) => d.price);
+  const rawMin = Math.min(...prices);
+  const rawMax = Math.max(...prices);
+  const pad = (rawMax - rawMin) * 0.3 || 2;
+  const yMin = Math.max(0, rawMin - pad);
+  const yMax = rawMax + pad;
 
-  // Global Y range across all visible items
-  const allPrices = itemData.flatMap((d) => d.purchases.map((p) => p.price));
-  const yMin = allPrices.length ? Math.floor(Math.min(...allPrices) * 0.92) : 0;
-  const yMax = allPrices.length ? Math.ceil(Math.max(...allPrices) * 1.05) : 10;
-
-  const chartW = 680; // viewBox width, scales responsively
-  const innerW = chartW - PADDING.left - PADDING.right;
-  const innerH = HEIGHT - PADDING.top - PADDING.bottom;
-
-  const toY = (price) => PADDING.top + innerH - ((price - yMin) / (yMax - yMin || 1)) * innerH;
-  const itemCount = itemData.length || 1;
-  const slotW = innerW / itemCount;
-  const toX = (i) => PADDING.left + slotW * i + slotW / 2;
+  const toX = (i) => PADDING.left + (i / Math.max(data.length - 1, 1)) * innerW;
+  const toY = (price) => PADDING.top + innerH - ((price - yMin) / (yMax - yMin)) * innerH;
 
   // Y axis ticks
   const yTicks = useMemo(() => {
     const range = yMax - yMin;
-    const step = range <= 10 ? 2 : range <= 30 ? 5 : range <= 100 ? 10 : 20;
+    const step = range <= 5 ? 1 : range <= 15 ? 2 : range <= 40 ? 5 : range <= 100 ? 10 : 20;
     const ticks = [];
     for (let v = Math.ceil(yMin / step) * step; v <= yMax; v += step) ticks.push(v);
     return ticks;
@@ -203,171 +261,122 @@ function OverviewChart({ items, allItems, priceHistory, filter, setFilter }) {
     const svg = svgRef.current;
     if (!svg) return;
     const rect = svg.getBoundingClientRect();
-    const scaleX = chartW / rect.width;
-    const scaleY = HEIGHT / rect.height;
-    const mx = (e.clientX - rect.left) * scaleX;
-    const my = (e.clientY - rect.top) * scaleY;
+    const mx = ((e.clientX - rect.left) / rect.width) * VW;
+    const my = ((e.clientY - rect.top) / rect.height) * VH;
 
     let closest = null;
-    let closestDist = 20; // px threshold in viewBox units
-
-    itemData.forEach((d, i) => {
+    let closestDist = 25;
+    data.forEach((d, i) => {
       const cx = toX(i);
-      d.purchases.forEach((p) => {
-        const cy = toY(p.price);
-        const dist = Math.sqrt((mx - cx) ** 2 + (my - cy) ** 2);
-        if (dist < closestDist) {
-          closestDist = dist;
-          closest = { x: cx, y: cy, item: d.item, price: p.price, date: p.date, color: d.color };
-        }
-      });
+      const cy = toY(d.price);
+      const dist = Math.sqrt((mx - cx) ** 2 + (my - cy) ** 2);
+      if (dist < closestDist) { closestDist = dist; closest = { i, cx, cy, ...d }; }
     });
     setTooltip(closest);
-  }, [itemData, toX, toY, chartW]);
+  }, [data]);
 
-  const handleMouseLeave = () => setTooltip(null);
-
-  if (items.length === 0) {
-    return (
-      <div style={{ background: "#fff", border: "1px solid var(--color-border)", borderRadius: 10, padding: 16, marginBottom: 20 }}>
-        <ChartHeader filter={filter} setFilter={setFilter} />
-        <div style={{ textAlign: "center", padding: "24px 0", color: "var(--color-muted-soft)", fontSize: 13.5 }}>
-          No items match &ldquo;{filter}&rdquo;
-        </div>
-      </div>
-    );
-  }
+  // Build SVG polyline points
+  const linePoints = data.map((d, i) => `${toX(i)},${toY(d.price)}`).join(" ");
 
   return (
-    <div style={{ background: "#fff", border: "1px solid var(--color-border)", borderRadius: 10, padding: "16px 12px 12px", marginBottom: 20 }}>
-      <ChartHeader filter={filter} setFilter={setFilter} />
+    <div style={{ position: "relative" }}>
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${VW} ${VH}`}
+        style={{ width: "100%", height: "auto", display: "block", overflow: "visible" }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setTooltip(null)}
+      >
+        <defs>
+          <filter id="dshadow">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.08" />
+          </filter>
+        </defs>
 
-      <div style={{ position: "relative", userSelect: "none" }}>
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${chartW} ${HEIGHT}`}
-          style={{ width: "100%", height: "auto", display: "block", overflow: "visible" }}
-          onMouseMove={handleMouseMove}
-          onMouseLeave={handleMouseLeave}
-        >
-          {/* Y grid lines + labels */}
-          {yTicks.map((v) => (
-            <g key={v}>
-              <line
-                x1={PADDING.left} y1={toY(v)}
-                x2={chartW - PADDING.right} y2={toY(v)}
-                stroke="#F0EBDE" strokeWidth={1}
-              />
+        {/* Y grid + labels */}
+        {yTicks.map((v) => (
+          <g key={v}>
+            <line x1={PADDING.left} y1={toY(v)} x2={VW - PADDING.right} y2={toY(v)} stroke="#F0EBDE" strokeWidth={1} />
+            <text x={PADDING.left - 8} y={toY(v)} textAnchor="end" dominantBaseline="middle" fontSize={11} fill="#A39C8C">
+              ${v}
+            </text>
+          </g>
+        ))}
+
+        {/* Connecting line */}
+        {data.length >= 2 && (
+          <polyline
+            points={linePoints}
+            fill="none"
+            stroke={CHART_COLOR}
+            strokeWidth={2}
+            strokeOpacity={0.35}
+            strokeLinejoin="round"
+          />
+        )}
+
+        {/* Price labels above each dot */}
+        {data.map((d, i) => {
+          const cx = toX(i);
+          const cy = toY(d.price);
+          const isActive = tooltip && tooltip.i === i;
+          return (
+            <g key={i}>
+              {/* Price label above dot */}
               <text
-                x={PADDING.left - 6} y={toY(v)}
-                textAnchor="end" dominantBaseline="middle"
-                fontSize={11} fill="#A39C8C"
+                x={cx} y={cy - 13}
+                textAnchor="middle" fontSize={10.5}
+                fontWeight="700" fill={CHART_COLOR}
+                fontFamily="var(--font-mono)"
               >
-                ${v}
+                {fmtMoney(d.price)}
+              </text>
+
+              {/* Dot */}
+              <circle
+                cx={cx} cy={cy}
+                r={isActive ? 8 : 6}
+                fill={CHART_COLOR}
+                stroke="#fff" strokeWidth={2.5}
+                style={{ transition: "r 0.1s" }}
+              />
+
+              {/* X axis date label */}
+              <text
+                x={cx} y={VH - PADDING.bottom + 14}
+                textAnchor="middle" fontSize={10}
+                fill="#A39C8C"
+                transform={data.length > 4 ? `rotate(-30, ${cx}, ${VH - PADDING.bottom + 14})` : undefined}
+              >
+                {d.label}
               </text>
             </g>
-          ))}
+          );
+        })}
 
-          {/* Per-item: range line + dots */}
-          {itemData.map((d, i) => {
-            const cx = toX(i);
-            const yLow = toY(d.min);
-            const yHigh = toY(d.max);
-            const hasRange = d.min !== d.max;
-
-            // Short label for X axis
-            const label = d.item.name.length > 12 ? d.item.name.slice(0, 11) + "…" : d.item.name;
-
-            return (
-              <g key={d.item.id}>
-                {/* Vertical range line */}
-                {hasRange && (
-                  <line
-                    x1={cx} y1={yHigh} x2={cx} y2={yLow}
-                    stroke={d.color} strokeWidth={2} strokeOpacity={0.25}
-                  />
-                )}
-
-                {/* Purchase dots */}
-                {d.purchases.map((p, j) => {
-                  const cy = toY(p.price);
-                  const isActive = tooltip && tooltip.item.id === d.item.id && tooltip.price === p.price && tooltip.date === p.date;
-                  return (
-                    <circle
-                      key={j}
-                      cx={cx} cy={cy} r={isActive ? 7 : 5}
-                      fill={d.color}
-                      stroke="#fff" strokeWidth={2}
-                      style={{ transition: "r 0.1s" }}
-                    />
-                  );
-                })}
-
-                {/* X axis label */}
-                <text
-                  x={cx} y={HEIGHT - PADDING.bottom + 14}
-                  textAnchor="middle" fontSize={10.5} fill="#A39C8C"
-                  transform={`rotate(-30, ${cx}, ${HEIGHT - PADDING.bottom + 14})`}
-                >
-                  {label}
-                </text>
-              </g>
-            );
-          })}
-
-          {/* Tooltip */}
-          {tooltip && (() => {
-            const TW = 160, TH = 54;
-            const tx = Math.min(Math.max(tooltip.x - TW / 2, PADDING.left), chartW - PADDING.right - TW);
-            const ty = tooltip.y - TH - 12;
-            return (
-              <g>
-                <rect x={tx} y={ty} width={TW} height={TH} rx={6} fill="#fff" stroke="#E8E2D2" strokeWidth={1} filter="url(#shadow)" />
-                <text x={tx + 10} y={ty + 17} fontSize={12} fontWeight="700" fill="#2B2820">{tooltip.item.name}</text>
-                <text x={tx + 10} y={ty + 32} fontSize={11} fill="#8A8378">{fmtDate(tooltip.date)}</text>
-                <text x={tx + 10} y={ty + 47} fontSize={12} fontWeight="700" fill={tooltip.color}>{fmtMoney(tooltip.price)}</text>
-              </g>
-            );
-          })()}
-
-          <defs>
-            <filter id="shadow" x="-10%" y="-20%" width="120%" height="160%">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.08" />
-            </filter>
-          </defs>
-        </svg>
-      </div>
-
-      <div style={{ fontSize: 11, color: "var(--color-muted-soft)", marginTop: 4 }}>
-        Each dot = one purchase · vertical line shows price range · hover a dot for details
-      </div>
+        {/* Hover tooltip */}
+        {tooltip && (() => {
+          const TW = 158; const TH = 52;
+          const tx = Math.min(Math.max(tooltip.cx - TW / 2, PADDING.left), VW - PADDING.right - TW);
+          const ty = tooltip.cy - TH - 16;
+          return (
+            <g>
+              <rect x={tx} y={ty} width={TW} height={TH} rx={6} fill="#fff" stroke="#E8E2D2" strokeWidth={1} filter="url(#dshadow)" />
+              <text x={tx + 10} y={ty + 17} fontSize={11} fill="#8A8378">{fmtDate(tooltip.date)}</text>
+              <text x={tx + 10} y={ty + 37} fontSize={13} fontWeight="700" fill={CHART_COLOR}>{fmtMoney(tooltip.price)}</text>
+            </g>
+          );
+        })()}
+      </svg>
     </div>
   );
 }
 
-function ChartHeader({ filter, setFilter }) {
+function Chip({ label, value, color }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-        Price overview — items bought 2+ times
-      </div>
-      <div style={{ position: "relative", minWidth: 160 }}>
-        <Search size={13} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "#B5AFA3", pointerEvents: "none" }} />
-        <input
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter items…"
-          style={{ ...inputStyle, paddingLeft: 28, paddingTop: 7, paddingBottom: 7, fontSize: 13, width: "100%" }}
-        />
-        {filter && (
-          <button
-            onClick={() => setFilter("")}
-            style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", padding: 0, display: "flex" }}
-          >
-            <X size={13} color="#B5AFA3" />
-          </button>
-        )}
-      </div>
+    <div style={{ background: "#FAF7EF", border: "1px solid var(--color-border)", borderRadius: 7, padding: "5px 10px", display: "flex", gap: 5, alignItems: "baseline" }}>
+      <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--color-muted-soft)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
+      <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 13, color }}>{value}</span>
     </div>
   );
 }
@@ -383,7 +392,6 @@ function ItemDetail({ item, history, onBack }) {
     () => [...history].sort((a, b) => (a.date < b.date ? -1 : 1)),
     [history]
   );
-
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
   const yearHist = hist.filter((h) => new Date(h.date + "T00:00:00") >= oneYearAgo);
@@ -443,9 +451,7 @@ function ItemDetail({ item, history, onBack }) {
 function StatCard({ label, value, color }) {
   return (
     <div style={{ background: "#fff", border: "1px solid var(--color-border)", borderRadius: 10, padding: "12px 10px", textAlign: "center" }}>
-      <div style={{ fontSize: 10.5, fontWeight: 600, color: "var(--color-muted-soft)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>
-        {label}
-      </div>
+      <div style={{ fontSize: 10.5, fontWeight: 600, color: "var(--color-muted-soft)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>{label}</div>
       <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 17, color }}>{value}</div>
     </div>
   );
